@@ -104,6 +104,20 @@ pub async fn delete_character(
 }
 
 #[tauri::command]
+pub async fn duplicate_character(
+    name: String,
+    app_state: State<'_, Arc<AppState>>,
+) -> Result<CharacterDto, CommandError> {
+    log_command(format!("duplicate_character {}", name));
+
+    app_state
+        .character_service
+        .duplicate_character(&name)
+        .await
+        .map_err(map_command_error("Failed to duplicate character"))
+}
+
+#[tauri::command]
 pub async fn rename_character(
     dto: RenameCharacterDto,
     app_state: State<'_, Arc<AppState>>,

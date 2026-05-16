@@ -78,6 +78,9 @@ open class RustPlugin : Plugin<Project> {
                     tasks["merge$targetArchCapitalized${profileCapitalized}JniLibFolders"].dependsOn(
                         targetBuildTask
                     )
+                    tasks["compile$targetArchCapitalized${profileCapitalized}Kotlin"].dependsOn(
+                        targetBuildTask
+                    )
                 }
             }
         }

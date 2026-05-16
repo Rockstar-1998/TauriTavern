@@ -127,7 +127,7 @@ abstract class WryActivity : AppCompatActivity() {
 
     companion object {
         init {
-            System.loadLibrary("tauritavern_lib")
+            System.loadLibrary("tauritavern")
         }
     }
 

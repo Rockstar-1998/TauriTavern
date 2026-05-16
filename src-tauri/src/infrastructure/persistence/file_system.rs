@@ -21,6 +21,10 @@ pub struct DataDirectory {
     groups: PathBuf,
     group_chats: PathBuf,
     backups: PathBuf,
+    renderers: PathBuf,
+    player_personas: PathBuf,
+    player_persona_avatars: PathBuf,
+    thumbnails_player_persona: PathBuf,
 }
 
 impl DataDirectory {
@@ -42,6 +46,10 @@ impl DataDirectory {
         let groups = default_user.join("groups");
         let group_chats = default_user.join("group chats");
         let backups = default_user.join("backups");
+        let renderers = default_user.join("renderers");
+        let player_personas = default_user.join("player-personas");
+        let player_persona_avatars = default_user.join("player-persona-avatars");
+        let thumbnails_player_persona = default_user.join("thumbnails/player-persona");
 
         Self {
             root,
@@ -59,6 +67,10 @@ impl DataDirectory {
             groups,
             group_chats,
             backups,
+            renderers,
+            player_personas,
+            player_persona_avatars,
+            thumbnails_player_persona,
         }
     }
 
@@ -108,6 +120,10 @@ impl DataDirectory {
             "vectors",
             "sysprompt",
             "reasoning",
+            "renderers",
+            "player-personas",
+            "player-persona-avatars",
+            "thumbnails/player-persona",
         ];
 
         for dir in default_user_dirs.iter() {
@@ -188,6 +204,26 @@ impl DataDirectory {
     /// Get the chat backups directory
     pub fn backups(&self) -> &Path {
         &self.backups
+    }
+
+    /// Get the renderer package directory.
+    pub fn renderers(&self) -> &Path {
+        &self.renderers
+    }
+
+    /// Get the player persona card metadata directory.
+    pub fn player_personas(&self) -> &Path {
+        &self.player_personas
+    }
+
+    /// Get the player persona avatar directory.
+    pub fn player_persona_avatars(&self) -> &Path {
+        &self.player_persona_avatars
+    }
+
+    /// Get the player persona thumbnail directory.
+    pub fn thumbnails_player_persona(&self) -> &Path {
+        &self.thumbnails_player_persona
     }
 }
 

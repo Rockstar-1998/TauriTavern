@@ -1,0 +1,7 @@
+{
+  "build": {
+    "frontendDist": "../frontend/dist",
+    "devUrl": "http://localhost:1420",
+    "beforeDevCommand": "node scripts/dev-server.mjs"
+  }
+}

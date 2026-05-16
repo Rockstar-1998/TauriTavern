@@ -111,3 +111,4 @@ impl From<StartupUpdatePopupSettings> for StartupUpdatePopupSettingsDto {
         }
     }
 }
+

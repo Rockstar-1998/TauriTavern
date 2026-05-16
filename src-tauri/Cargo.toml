@@ -26,6 +26,7 @@ tauri-plugin-fs = "2.4.5"
 tauri-plugin-notification = "2.3.1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+serde_yaml = "0.9"
 thiserror = "2"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", default-features = false, features = ["ansi", "env-filter", "fmt", "std"] }
@@ -45,12 +46,15 @@ zip = { version = "8", default-features = false, features = ["deflate-flate2-zli
 image = { version = "0.24", default-features = false, features = ["bmp", "gif", "ico", "jpeg", "png", "webp"] }
 png = "0.17"
 mime_guess = "2.0.5"
+regex = "1"
 flate2 = "1.1.9"
 filetime = "0.2"
 miktik = { version = "0.2.0", default-features = false, features = ["openai", "huggingface", "sentencepiece"] }
-axum = { version = "0.7", default-features = false, features = ["http1", "json", "multipart", "tokio"] }
+axum = { version = "0.7", default-features = false, features = ["http1", "json", "multipart", "tokio", "ws"] }
 local-ip-address = "0.6"
 qrcode = { version = "0.14", default-features = false, features = ["svg"] }
+futures-util = "0.3"
+tokio-tungstenite = { version = "0.24", default-features = false, features = ["rustls-tls-webpki-roots"] }
 
 [target.'cfg(target_os = "android")'.dependencies]
 rustls = { version = "0.23", default-features = false, features = ["std"] }

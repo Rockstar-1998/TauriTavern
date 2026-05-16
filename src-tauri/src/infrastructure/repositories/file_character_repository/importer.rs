@@ -1,20 +1,32 @@
 use chrono::Utc;
 use serde_json::Value;
 use std::borrow::Cow;
+use std::io::{Cursor, Read};
 use std::path::{Path, PathBuf};
 
 use tokio::fs;
+use zip::ZipArchive;
 
 use crate::domain::errors::DomainError;
 use crate::domain::models::character::{Character, sanitize_filename};
 use crate::domain::models::chat::humanized_date as humanized_chat_date;
 use crate::infrastructure::persistence::png_utils::{
-    read_character_data_from_png, write_character_data_to_png,
+    process_avatar_image, read_character_data_from_png, write_character_data_to_png,
 };
 
 use super::FileCharacterRepository;
 
 impl FileCharacterRepository {
+    fn decode_imported_yaml(&self, yaml_data: &str) -> Result<String, DomainError> {
+        let value: Value = serde_yaml::from_str(yaml_data).map_err(|error| {
+            DomainError::InvalidData(format!("Failed to parse character YAML: {}", error))
+        })?;
+
+        serde_json::to_string(&value).map_err(|error| {
+            DomainError::InvalidData(format!("Failed to normalize character YAML: {}", error))
+        })
+    }
+
     fn parse_hex_escape(digits: &[u8]) -> Option<u16> {
         if digits.len() != 4 {
             return None;
@@ -445,6 +457,131 @@ impl FileCharacterRepository {
         let default_avatar = self.read_default_avatar().await?;
         let target_path = self
             .persist_character_card(&file_stem, &default_avatar, &character)
+            .await?;
+
+        self.read_character_from_file(&target_path).await
+    }
+
+    pub(crate) async fn import_from_yaml_file(
+        &self,
+        source_path: &Path,
+        file_data: Vec<u8>,
+        preserve_file_name: Option<&str>,
+    ) -> Result<Character, DomainError> {
+        let yaml_data = String::from_utf8(file_data).map_err(|error| {
+            DomainError::InvalidData(format!("Failed to decode YAML character file: {}", error))
+        })?;
+        let card_json = self.decode_imported_yaml(&yaml_data)?;
+        let mut character = self.parse_imported_character_json(&card_json)?;
+        let file_stem =
+            self.resolve_import_file_stem(&character, source_path, preserve_file_name)?;
+
+        character.file_name = Some(file_stem.clone());
+        character.avatar = format!("{}.png", file_stem);
+        character.chat = Self::normalize_chat_file_stem(&character.chat, &character.name);
+
+        let default_avatar = self.read_default_avatar().await?;
+        let target_path = self
+            .persist_character_card(&file_stem, &default_avatar, &character)
+            .await?;
+
+        self.read_character_from_file(&target_path).await
+    }
+
+    pub(crate) async fn import_from_charx_file(
+        &self,
+        source_path: &Path,
+        file_data: Vec<u8>,
+        preserve_file_name: Option<&str>,
+    ) -> Result<Character, DomainError> {
+        let mut archive = ZipArchive::new(Cursor::new(file_data)).map_err(|error| {
+            DomainError::InvalidData(format!("Failed to open CHARX archive: {}", error))
+        })?;
+
+        let mut card_json: Option<String> = None;
+        let mut image_bytes: Option<Vec<u8>> = None;
+
+        for index in 0..archive.len() {
+            let mut entry = archive.by_index(index).map_err(|error| {
+                DomainError::InvalidData(format!("Failed to read CHARX entry: {}", error))
+            })?;
+
+            if entry.is_dir() {
+                continue;
+            }
+
+            let entry_name = entry.name().to_string();
+            let extension = Path::new(&entry_name)
+                .extension()
+                .and_then(|value| value.to_str())
+                .unwrap_or("")
+                .to_lowercase();
+
+            let mut buffer = Vec::new();
+            entry.read_to_end(&mut buffer).map_err(|error| {
+                DomainError::InvalidData(format!(
+                    "Failed to extract CHARX entry {}: {}",
+                    entry_name, error
+                ))
+            })?;
+
+            if card_json.is_none() {
+                match extension.as_str() {
+                    "json" => {
+                        let json_text = String::from_utf8(buffer.clone()).map_err(|error| {
+                            DomainError::InvalidData(format!(
+                                "Failed to decode CHARX JSON card: {}",
+                                error
+                            ))
+                        })?;
+                        card_json = Some(json_text);
+                    }
+                    "yaml" | "yml" => {
+                        let yaml_text = String::from_utf8(buffer.clone()).map_err(|error| {
+                            DomainError::InvalidData(format!(
+                                "Failed to decode CHARX YAML card: {}",
+                                error
+                            ))
+                        })?;
+                        card_json = Some(self.decode_imported_yaml(&yaml_text)?);
+                    }
+                    _ => {}
+                }
+            }
+
+            if image_bytes.is_none() {
+                match extension.as_str() {
+                    "png" => image_bytes = Some(buffer),
+                    "jpg" | "jpeg" | "webp" => {
+                        image_bytes = Some(process_avatar_image(&buffer, None).await?);
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        let card_json = card_json.ok_or_else(|| {
+            DomainError::InvalidData(
+                "CHARX archive does not contain a supported character card payload".to_string(),
+            )
+        })?;
+
+        let mut character = self.parse_imported_character_json(&card_json)?;
+        let file_stem =
+            self.resolve_import_file_stem(&character, source_path, preserve_file_name)?;
+
+        character.file_name = Some(file_stem.clone());
+        character.avatar = format!("{}.png", file_stem);
+        character.chat = Self::normalize_chat_file_stem(&character.chat, &character.name);
+
+        let base_image = if let Some(image_data) = image_bytes {
+            image_data
+        } else {
+            self.read_default_avatar().await?
+        };
+
+        let target_path = self
+            .persist_character_card(&file_stem, &base_image, &character)
             .await?;
 
         self.read_character_from_file(&target_path).await

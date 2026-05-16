@@ -11805,6 +11805,7 @@ jQuery(async function () {
         else if (id === 'option_toggle_fullscreen') {
             const nextMode = !power_user.mobile_immersive_fullscreen;
             power_user.mobile_immersive_fullscreen = nextMode;
+            power_user.mobile_immersive_fullscreen_user_set = true;
             setMobileImmersiveFullscreenEnabled(nextMode);
             saveSettingsDebounced();
         }

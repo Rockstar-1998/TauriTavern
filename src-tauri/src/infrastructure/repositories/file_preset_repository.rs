@@ -5,7 +5,7 @@ use std::sync::Arc;
 use tauri::AppHandle;
 
 use crate::domain::errors::DomainError;
-use crate::domain::models::preset::{DefaultPreset, Preset, PresetType, sanitize_filename};
+use crate::domain::models::preset::{DefaultPreset, Preset, PresetType, canonical_preset_name};
 use crate::domain::repositories::content_repository::ContentRepository;
 use crate::domain::repositories::preset_repository::PresetRepository;
 use crate::infrastructure::assets::read_resource_json;
@@ -52,7 +52,11 @@ impl FilePresetRepository {
     /// Get the full file path for a preset
     fn get_preset_path(&self, name: &str, preset_type: &PresetType) -> PathBuf {
         let directory = self.get_preset_directory(preset_type);
-        let filename = format!("{}{}", sanitize_filename(name), preset_type.extension());
+        let filename = format!(
+            "{}{}",
+            canonical_preset_name(name),
+            preset_type.file_suffix()
+        );
         directory.join(filename)
     }
 
@@ -234,7 +238,7 @@ impl PresetRepository for FilePresetRepository {
             return Ok(vec![]);
         }
 
-        let files = list_files_with_extension(&directory, preset_type.extension()).await?;
+        let files = list_files_with_extension(&directory, preset_type.file_extension()).await?;
 
         let preset_names: Vec<String> = files
             .into_iter()

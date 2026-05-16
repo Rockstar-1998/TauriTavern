@@ -101,12 +101,12 @@ async fn resolve_api_config(
             let base_url = resolve_custom_base_url(custom_url, reverse_proxy)?;
             let extra_headers = custom_parameters::parse_string_map(custom_headers_raw)?;
 
-            let api_key = if reverse_proxy.is_empty() {
+            let api_key = if !proxy_password.is_empty() {
+                proxy_password.to_string()
+            } else {
                 read_optional_secret(secret_repository, SecretKeys::CUSTOM)
                     .await?
                     .unwrap_or_default()
-            } else {
-                proxy_password.to_string()
             };
 
             Ok(ChatCompletionApiConfig {

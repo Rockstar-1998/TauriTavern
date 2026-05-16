@@ -535,6 +535,11 @@ async fn list_chat_summaries_returns_streamed_metadata() {
                 "integrity": "summary-a",
                 "chat_id_hash": 42,
                 "custom": "value",
+                "tauritavern": {
+                    "session": {
+                        "mode": "multiplayer"
+                    }
+                }
             },
             "user_name": "unused",
             "character_name": "unused",
@@ -570,6 +575,7 @@ async fn list_chat_summaries_returns_streamed_metadata() {
     assert_eq!(summary.message_count, 2);
     assert_eq!(summary.preview, "latest response");
     assert_eq!(summary.chat_id.as_deref(), Some("42"));
+    assert_eq!(summary.session_mode, "multiplayer");
     assert_eq!(
         summary
             .chat_metadata
@@ -842,6 +848,11 @@ async fn summary_index_is_persisted_and_reloaded() {
         json!({
             "chat_metadata": {
                 "chat_id_hash": 700,
+                "tauritavern": {
+                    "session": {
+                        "mode": "multiplayer"
+                    }
+                }
             },
             "user_name": "User",
             "character_name": "Alice",
@@ -900,6 +911,7 @@ async fn summary_index_is_persisted_and_reloaded() {
         .expect("list summaries after reload");
     assert_eq!(reloaded.len(), 1);
     assert_eq!(reloaded[0].preview, "persist me");
+    assert_eq!(reloaded[0].session_mode, "multiplayer");
 
     let _ = fs::remove_dir_all(&root).await;
 }
@@ -1303,6 +1315,69 @@ async fn patch_chat_payload_windowed_appends_and_rewrites_tail() {
         .map(|line| serde_json::from_str::<Value>(line).expect("parse json line"))
         .collect::<Vec<_>>();
     assert_eq!(values.len(), 2);
+
+    let _ = fs::remove_dir_all(&root).await;
+}
+
+#[tokio::test]
+async fn windowed_payload_tail_and_before_report_start_index_and_total_messages() {
+    let (repository, root) = setup_repository().await;
+
+    let payload = vec![
+        payload_with_integrity("windowed-meta")[0].clone(),
+        json!({
+            "name": "User",
+            "is_user": true,
+            "send_date": "2026-01-01T00:00:00.000Z",
+            "mes": "one",
+            "extra": {},
+        }),
+        json!({
+            "name": "Alice",
+            "is_user": false,
+            "send_date": "2026-01-01T00:00:01.000Z",
+            "mes": "two",
+            "extra": {},
+        }),
+        json!({
+            "name": "User",
+            "is_user": true,
+            "send_date": "2026-01-01T00:00:02.000Z",
+            "mes": "three",
+            "extra": {},
+        }),
+        json!({
+            "name": "Alice",
+            "is_user": false,
+            "send_date": "2026-01-01T00:00:03.000Z",
+            "mes": "four",
+            "extra": {},
+        }),
+    ];
+
+    save_chat_payload_from_values(&repository, &root, "alice", "session", &payload, false)
+        .await
+        .expect("save payload");
+
+    let tail = repository
+        .get_character_payload_tail_lines("alice", "session", 2)
+        .await
+        .expect("get tail");
+    assert_eq!(tail.lines.len(), 2);
+    assert_eq!(tail.start_index, 2);
+    assert_eq!(tail.total_messages, 4);
+    assert_eq!(tail.cursor.start_index, Some(2));
+    assert_eq!(tail.cursor.total_messages, Some(4));
+
+    let before = repository
+        .get_character_payload_before_lines("alice", "session", tail.cursor, 2)
+        .await
+        .expect("get before");
+    assert_eq!(before.lines.len(), 2);
+    assert_eq!(before.start_index, 0);
+    assert_eq!(before.total_messages, 4);
+    assert_eq!(before.cursor.start_index, Some(0));
+    assert_eq!(before.cursor.total_messages, Some(4));
 
     let _ = fs::remove_dir_all(&root).await;
 }

@@ -1,4 +1,9 @@
-import { normalizeBinaryPayload, sanitizeAttachmentFileName } from '../binary-utils.js';
+﻿import { normalizeBinaryPayload, sanitizeAttachmentFileName } from '../binary-utils.js';
+
+function getUploadedFileName(file, fallbackName) {
+    const name = typeof file?.name === 'string' ? file.name.trim() : '';
+    return name || fallbackName;
+}
 
 export function registerCharacterRoutes(router, context, { jsonResponse, textResponse }) {
     router.post('/api/characters/all', async () => {
@@ -173,7 +178,7 @@ export function registerCharacterRoutes(router, context, { jsonResponse, textRes
 
         const fileType = String(body.get('file_type') || '').trim().toLowerCase();
         const fallbackName = fileType ? `import.${fileType}` : 'import.bin';
-        const preferredName = file instanceof File && file.name ? file.name : fallbackName;
+        const preferredName = getUploadedFileName(file, fallbackName);
 
         const fileInfo = await context.materializeUploadFile(file, {
             preferredName,
@@ -248,3 +253,4 @@ export function registerCharacterRoutes(router, context, { jsonResponse, textRes
         });
     });
 }
+

@@ -184,6 +184,10 @@ impl CharacterService {
             character.data.alternate_greetings = alternate_greetings;
         }
 
+        if let Some(world) = dto.world {
+            character.data.extensions.world = world;
+        }
+
         if let Some(system_prompt) = dto.system_prompt {
             character.data.system_prompt = system_prompt;
         }
@@ -209,6 +213,44 @@ impl CharacterService {
         self.repository.update(&character).await?;
 
         Ok(CharacterDto::from(character))
+    }
+
+    pub async fn duplicate_character(&self, name: &str) -> Result<CharacterDto, ApplicationError> {
+        let original = self.repository.find_by_name(name).await?;
+        let duplicate_name = self
+            .resolve_available_duplicate_name(&original.name)
+            .await?;
+
+        let mut duplicate = Character::from(CreateCharacterDto {
+            name: duplicate_name,
+            description: original.description.clone(),
+            personality: original.personality.clone(),
+            scenario: original.scenario.clone(),
+            first_mes: original.first_mes.clone(),
+            mes_example: original.mes_example.clone(),
+            creator: Some(original.creator.clone()),
+            creator_notes: Some(original.creator_notes.clone()),
+            character_version: Some(original.character_version.clone()),
+            tags: Some(original.tags.clone()),
+            talkativeness: Some(original.talkativeness),
+            fav: Some(original.fav),
+            alternate_greetings: Some(original.data.alternate_greetings.clone()),
+            world: Some(original.data.extensions.world.clone()),
+            system_prompt: Some(original.data.system_prompt.clone()),
+            post_history_instructions: Some(original.data.post_history_instructions.clone()),
+            extensions: Some(
+                serde_json::to_value(&original.data.extensions)
+                    .unwrap_or_else(|_| Value::Object(Map::new())),
+            ),
+        });
+        let file_name = duplicate.get_file_name();
+        duplicate.file_name = Some(file_name.clone());
+        duplicate.avatar = format!("{}.png", file_name);
+
+        self.validate_character(&duplicate)?;
+        self.repository.save(&duplicate).await?;
+
+        Ok(CharacterDto::from(duplicate))
     }
 
     /// Delete a character
@@ -853,6 +895,26 @@ impl CharacterService {
         }
 
         Ok(export_value)
+    }
+
+    async fn resolve_available_duplicate_name(
+        &self,
+        original_name: &str,
+    ) -> Result<String, ApplicationError> {
+        let base_name = format!("{} (Copy)", original_name.trim());
+        let mut candidate = base_name.clone();
+        let mut suffix = 2usize;
+
+        loop {
+            match self.repository.find_by_name(&candidate).await {
+                Ok(_) => {
+                    candidate = format!("{} {}", base_name, suffix);
+                    suffix += 1;
+                }
+                Err(DomainError::NotFound(_)) => return Ok(candidate),
+                Err(error) => return Err(error.into()),
+            }
+        }
     }
 }
 

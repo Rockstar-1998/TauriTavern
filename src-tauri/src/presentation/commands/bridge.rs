@@ -1,8 +1,11 @@
+use std::sync::Arc;
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tauri::{Emitter, Window};
+use tauri::{Emitter, Manager, Window};
 use tauri_plugin_notification::{NotificationExt, PermissionState};
 
+use crate::app::AppStartupState;
 use crate::infrastructure::assets::read_resource_text;
 use crate::presentation::commands::helpers::{log_command, map_command_error};
 use crate::presentation::errors::CommandError;
@@ -56,6 +59,13 @@ pub struct VersionInfo {
     pub git_branch: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StartupStatus {
+    pub ready: bool,
+    pub error: Option<String>,
+}
+
 #[tauri::command]
 pub fn get_version() -> Result<String, CommandError> {
     Ok(env!("CARGO_PKG_VERSION").to_string())
@@ -89,8 +99,18 @@ fn normalize_optional_build_value(value: &str) -> Option<String> {
 }
 
 #[tauri::command]
-pub fn is_ready() -> Result<bool, CommandError> {
-    Ok(true)
+pub fn is_ready(app: tauri::AppHandle) -> Result<bool, CommandError> {
+    let startup = app.state::<Arc<AppStartupState>>();
+    Ok(startup.is_ready())
+}
+
+#[tauri::command]
+pub fn get_startup_status(app: tauri::AppHandle) -> Result<StartupStatus, CommandError> {
+    let startup = app.state::<Arc<AppStartupState>>();
+    Ok(StartupStatus {
+        ready: startup.is_ready(),
+        error: startup.error_message(),
+    })
 }
 
 fn validate_resource_segment(value: &str, field: &str) -> Result<(), CommandError> {

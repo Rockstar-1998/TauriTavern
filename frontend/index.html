@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f172a" />
+    <title>TauriTavern 桌面端</title>
+    <style>
+      html, body, #root {
+        height: 100%;
+        margin: 0;
+      }
+
+      body {
+        background: linear-gradient(180deg, #ece8e3 0%, #efeeea 100%);
+        color: #111827;
+        font-family: 'Microsoft YaHei', 'PingFang SC', 'Noto Sans CJK SC', 'Source Han Sans SC', Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      }
+
+      #boot-splash {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+      }
+
+      .tt-boot-placeholder {
+        display: flex;
+        min-height: 100%;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+      }
+
+      .tt-boot-card {
+        width: min(520px, 100%);
+        border-radius: 32px;
+        border: 1px solid rgba(148, 163, 184, 0.22);
+        background: rgba(249, 248, 245, 0.96);
+        box-shadow: 0 18px 42px rgba(15, 23, 42, 0.08);
+        padding: 32px 28px;
+        text-align: center;
+      }
+
+      .tt-boot-brand {
+        font-size: 28px;
+        font-weight: 700;
+      }
+
+      .tt-boot-subtitle {
+        margin-top: 8px;
+        color: #6b7280;
+        font-size: 14px;
+      }
+
+      .tt-boot-indicator {
+        margin-top: 18px;
+        display: inline-flex;
+        gap: 8px;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .tt-boot-indicator span {
+        width: 10px;
+        height: 10px;
+        border-radius: 999px;
+        background: #334155;
+        opacity: 0.28;
+        animation: tt-boot-pulse 1s ease-in-out infinite;
+      }
+
+      .tt-boot-indicator span:nth-child(2) {
+        animation-delay: 0.15s;
+      }
+
+      .tt-boot-indicator span:nth-child(3) {
+        animation-delay: 0.3s;
+      }
+
+      @keyframes tt-boot-pulse {
+        0%, 100% {
+          opacity: 0.28;
+          transform: translateY(0);
+        }
+
+        50% {
+          opacity: 1;
+          transform: translateY(-2px);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="boot-splash">
+      <div class="tt-boot-placeholder">
+        <div class="tt-boot-card">
+          <div class="tt-boot-brand">TauriTavern</div>
+          <div class="tt-boot-subtitle">&#27491;&#22312;&#21551;&#21160;&#24037;&#20316;&#21306;&#8230;</div>
+          <div class="tt-boot-indicator" aria-hidden="true">
+            <span></span>
+            <span></span>
+            <span></span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div id="root"></div>
+    <script type="module" src="/src/index.tsx"></script>
+  </body>
+</html>

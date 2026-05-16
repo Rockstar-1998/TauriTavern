@@ -24,9 +24,14 @@ pub enum PresetType {
 }
 
 impl PresetType {
-    /// Get the file extension for this preset type
-    pub fn extension(&self) -> &'static str {
+    /// Get the file suffix for persisted preset files.
+    pub fn file_suffix(&self) -> &'static str {
         ".json"
+    }
+
+    /// Get the extension name used when enumerating files.
+    pub fn file_extension(&self) -> &'static str {
+        "json"
     }
 
     /// Get the directory name for this preset type
@@ -71,6 +76,10 @@ impl PresetType {
             PresetType::Reasoning => "reasoning",
         }
     }
+}
+
+pub fn canonical_preset_name(name: &str) -> String {
+    sanitize_filename(name)
 }
 
 impl fmt::Display for PresetType {
@@ -215,6 +224,12 @@ mod tests {
     }
 
     #[test]
+    fn test_preset_type_file_contract() {
+        assert_eq!(PresetType::OpenAI.file_suffix(), ".json");
+        assert_eq!(PresetType::OpenAI.file_extension(), "json");
+    }
+
+    #[test]
     fn test_preset_data_with_name() {
         let preset = Preset::new(
             "Test Preset".to_string(),
@@ -238,6 +253,10 @@ mod tests {
         assert_eq!(
             sanitize_filename("name*with?more\"unsafe<chars>"),
             "name_with_more_unsafe_chars_"
+        );
+        assert_eq!(
+            canonical_preset_name("name/with\\unsafe:chars"),
+            "name_with_unsafe_chars"
         );
     }
 

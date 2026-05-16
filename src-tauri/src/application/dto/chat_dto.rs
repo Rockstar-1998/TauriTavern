@@ -93,6 +93,7 @@ pub struct ChatSearchResultDto {
     pub preview: String,
     pub date: i64,
     pub chat_id: Option<String>,
+    pub session_mode: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub chat_metadata: Option<serde_json::Value>,
 }
@@ -356,6 +357,7 @@ impl From<ChatSearchResult> for ChatSearchResultDto {
             preview: result.preview,
             date: result.date,
             chat_id: result.chat_id,
+            session_mode: result.session_mode,
             chat_metadata: result.chat_metadata,
         }
     }

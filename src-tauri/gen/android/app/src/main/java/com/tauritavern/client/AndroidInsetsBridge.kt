@@ -24,7 +24,7 @@ class AndroidInsetsBridge(
   private val mainHandler: Handler,
   private val readinessPoller: WebViewReadinessPoller,
 ) {
-  private var immersiveFullscreenEnabled: Boolean = true
+  private var immersiveFullscreenEnabled: Boolean = false
   private var systemBarInsets: Insets = Insets.NONE
   private var imeBottomInset: Int = 0
   private var lastPushedInsetsSnapshot: InsetsSnapshot? = null
@@ -77,14 +77,18 @@ class AndroidInsetsBridge(
 
   @Suppress("DEPRECATION")
   private fun configureImmersiveSystemBars() {
-    WindowCompat.setDecorFitsSystemWindows(window, false)
+    WindowCompat.setDecorFitsSystemWindows(window, !immersiveFullscreenEnabled)
     window.statusBarColor = Color.TRANSPARENT
     window.navigationBarColor = Color.TRANSPARENT
 
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
       window.attributes = window.attributes.apply {
         layoutInDisplayCutoutMode =
-          WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+          if (immersiveFullscreenEnabled) {
+            WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+          } else {
+            WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_DEFAULT
+          }
       }
     }
 
@@ -136,7 +140,7 @@ class AndroidInsetsBridge(
   }
 
   private fun updateSystemBarInsets(insets: WindowInsetsCompat) {
-    if (immersiveFullscreenEnabled) {
+    if (!immersiveFullscreenEnabled) {
       systemBarInsets = Insets.NONE
       return
     }

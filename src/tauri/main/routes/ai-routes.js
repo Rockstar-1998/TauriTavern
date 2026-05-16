@@ -486,18 +486,28 @@ function createStreamId() {
     return `${timestamp}-${random}`;
 }
 
-async function invokeChatCompletionWithAbort(context, payload, signal) {
+async function saveGenerationTrace(context, trace) {
+    try {
+        await context.safeInvoke('save_generation_trace', { dto: trace });
+        return true;
+    } catch (error) {
+        console.error('Failed to save generation trace:', error);
+        return false;
+    }
+}
+
+async function invokeChatCompletionWithAbort(context, payload, signal, requestId) {
     if (signal?.aborted) {
         throw createAbortError();
     }
 
-    const requestId = createStreamId();
+    const resolvedRequestId = requestId || createStreamId();
     let abortRequested = false;
     let abortHandler = null;
     if (signal) {
         abortHandler = () => {
             abortRequested = true;
-            void context.safeInvoke('cancel_chat_completion_generation', { requestId })
+            void context.safeInvoke('cancel_chat_completion_generation', { requestId: resolvedRequestId })
                 .catch((error) => {
                     console.debug('Failed to cancel chat completion generation:', error);
                 });
@@ -507,7 +517,7 @@ async function invokeChatCompletionWithAbort(context, payload, signal) {
 
     try {
         const result = await context.safeInvoke('generate_chat_completion', {
-            requestId,
+            requestId: resolvedRequestId,
             dto: payload,
         });
 
@@ -515,7 +525,7 @@ async function invokeChatCompletionWithAbort(context, payload, signal) {
             throw createAbortError();
         }
 
-        return result;
+        return { requestId: resolvedRequestId, result };
     } finally {
         if (signal && abortHandler) {
             signal.removeEventListener('abort', abortHandler);
@@ -523,8 +533,9 @@ async function invokeChatCompletionWithAbort(context, payload, signal) {
     }
 }
 
-async function createChatCompletionStreamResponse(context, payload, signal, lifecycle) {
-    const streamId = createStreamId();
+async function createChatCompletionStreamResponse(context, payload, signal, lifecycle, traceMeta) {
+    const streamId = traceMeta?.requestId || createStreamId();
+    const traceCreatedAt = traceMeta?.createdAt || new Date().toISOString();
     const eventName = `chat-completion-stream:${streamId}`;
     const encoder = new TextEncoder();
     const androidSupportsLiveUpdates = getAndroidGenerationBridgeResult('supportsLiveUpdates') === true;
@@ -536,6 +547,9 @@ async function createChatCompletionStreamResponse(context, payload, signal, life
     let androidLastTokenCharCount = 0;
     let androidLastTokenReportAt = 0;
     let androidTokenCountInFlight = false;
+    const traceChunks = [];
+    let traceText = '';
+    let traceSaved = false;
 
     const tauriEvent = window.__TAURI__?.event;
     if (typeof tauriEvent?.listen !== 'function') {
@@ -639,6 +653,24 @@ async function createChatCompletionStreamResponse(context, payload, signal, life
             await requestUpstreamCancel();
         }
 
+        if (!traceSaved) {
+            traceSaved = true;
+            const responsePayload = {
+                chunks: traceChunks,
+                assembled: traceText,
+                done: sawDone,
+                error: failureMessage || null,
+                cancelled: cancelUpstream,
+            };
+            await saveGenerationTrace(context, {
+                request_id: streamId,
+                created_at: traceCreatedAt,
+                streamed: true,
+                request: payload,
+                response: responsePayload,
+            });
+        }
+
         const isSuccessfulCompletion = sawDone && !cancelUpstream && !errorPayload;
         const shouldNotifyFailure = !isSuccessfulCompletion && !cancelUpstream && Boolean(failureMessage || errorPayload);
         lifecycle?.finish({
@@ -663,6 +695,7 @@ async function createChatCompletionStreamResponse(context, payload, signal, life
             }
 
             pendingFrames.push(data);
+            traceChunks.push(data);
 
             if (data === '[DONE]') {
                 sawDone = true;
@@ -671,64 +704,68 @@ async function createChatCompletionStreamResponse(context, payload, signal, life
                 return;
             }
 
-            if (androidCanReportTokens) {
-                try {
-                    const parsed = JSON.parse(data);
-                    const delta = asObject(parsed?.choices?.[0]?.delta);
-                    const chunkText = typeof delta.content === 'string' ? delta.content : '';
-                    if (chunkText) {
-                        androidOutputChunks.push(chunkText);
-                        androidOutputChars += chunkText.length;
+            let chunkText = '';
+            try {
+                const parsed = JSON.parse(data);
+                const delta = asObject(parsed?.choices?.[0]?.delta);
+                chunkText = typeof delta.content === 'string' ? delta.content : '';
+            } catch {
+                // Ignore non-JSON chunks (e.g. keep-alives).
+            }
 
-                        const now = Date.now();
-                        const shouldCompute = shouldNotifyCompletion()
-                            && !androidTokenCountInFlight
-                            && now - androidLastTokenReportAt >= ANDROID_LIVE_UPDATE_TOKEN_THROTTLE_MS
-                            && androidOutputChars - androidLastTokenCharCount >= ANDROID_LIVE_UPDATE_TOKEN_MIN_CHARS_DELTA;
+            if (chunkText) {
+                traceText += chunkText;
+            }
 
-                        if (shouldCompute) {
-                            androidLastTokenReportAt = now;
-                            androidTokenCountInFlight = true;
-                            const charCountAtRequest = androidOutputChars;
-                            const textSnapshot = androidOutputChunks.join('');
-                            androidOutputChunks.length = 0;
-                            androidOutputChunks.push(textSnapshot);
+            if (androidCanReportTokens && chunkText) {
+                androidOutputChunks.push(chunkText);
+                androidOutputChars += chunkText.length;
 
-                            void context.safeInvoke('count_openai_tokens', {
-                                dto: {
-                                    model: androidModel,
-                                    messages: [textSnapshot],
-                                },
-                            })
-                                .then((result) => {
-                                    if (isClosed) {
-                                        return;
-                                    }
+                const now = Date.now();
+                const shouldCompute = shouldNotifyCompletion()
+                    && !androidTokenCountInFlight
+                    && now - androidLastTokenReportAt >= ANDROID_LIVE_UPDATE_TOKEN_THROTTLE_MS
+                    && androidOutputChars - androidLastTokenCharCount >= ANDROID_LIVE_UPDATE_TOKEN_MIN_CHARS_DELTA;
 
-                                    const count = Number(asObject(result).token_count || 0);
-                                    if (!Number.isFinite(count) || count < 0) {
-                                        return;
-                                    }
+                if (shouldCompute) {
+                    androidLastTokenReportAt = now;
+                    androidTokenCountInFlight = true;
+                    const charCountAtRequest = androidOutputChars;
+                    const textSnapshot = androidOutputChunks.join('');
+                    androidOutputChunks.length = 0;
+                    androidOutputChunks.push(textSnapshot);
 
-                                    const normalized = Math.floor(count);
-                                    androidLastTokenCharCount = charCountAtRequest;
-                                    if (normalized === androidLastTokenCount) {
-                                        return;
-                                    }
+                    void context.safeInvoke('count_openai_tokens', {
+                        dto: {
+                            model: androidModel,
+                            messages: [textSnapshot],
+                        },
+                    })
+                        .then((result) => {
+                            if (isClosed) {
+                                return;
+                            }
 
-                                    androidLastTokenCount = normalized;
-                                    callAndroidGenerationBridge('onGenerationProgress', normalized);
-                                })
-                                .catch((error) => {
-                                    console.debug('Failed to count stream tokens:', error);
-                                })
-                                .finally(() => {
-                                    androidTokenCountInFlight = false;
-                                });
-                        }
-                    }
-                } catch {
-                    // Ignore non-JSON chunks (e.g. keep-alives).
+                            const count = Number(asObject(result).token_count || 0);
+                            if (!Number.isFinite(count) || count < 0) {
+                                return;
+                            }
+
+                            const normalized = Math.floor(count);
+                            androidLastTokenCharCount = charCountAtRequest;
+                            if (normalized === androidLastTokenCount) {
+                                return;
+                            }
+
+                            androidLastTokenCount = normalized;
+                            callAndroidGenerationBridge('onGenerationProgress', normalized);
+                        })
+                        .catch((error) => {
+                            console.debug('Failed to count stream tokens:', error);
+                        })
+                        .finally(() => {
+                            androidTokenCountInFlight = false;
+                        });
                 }
             }
 
@@ -847,15 +884,28 @@ export function registerAiRoutes(router, context, { jsonResponse }) {
     router.post('/api/backends/chat-completions/generate', async ({ body, init }) => {
         const payload = { ...asObject(body) };
         const wantsStream = Boolean(payload.stream);
+        const traceMeta = { requestId: createStreamId(), createdAt: new Date().toISOString() };
         const lifecycle = createGenerationLifecycle(context, payload);
         lifecycle.begin();
 
         try {
             if (wantsStream) {
-                return await createChatCompletionStreamResponse(context, payload, init?.signal, lifecycle);
+                return await createChatCompletionStreamResponse(context, payload, init?.signal, lifecycle, traceMeta);
             }
 
-            const completion = await invokeChatCompletionWithAbort(context, payload, init?.signal);
+            const { result: completion } = await invokeChatCompletionWithAbort(
+                context,
+                payload,
+                init?.signal,
+                traceMeta.requestId,
+            );
+            await saveGenerationTrace(context, {
+                request_id: traceMeta.requestId,
+                created_at: traceMeta.createdAt,
+                streamed: false,
+                request: payload,
+                response: completion || {},
+            });
             lifecycle.finish({ success: true });
             return jsonResponse(completion || {});
         } catch (error) {
@@ -878,17 +928,48 @@ export function registerAiRoutes(router, context, { jsonResponse }) {
 
             if (wantsStream) {
                 if (isQuiet) {
-                    return jsonResponse(buildLegacyErrorPayload(error), 502);
+                    const errorPayload = buildLegacyErrorPayload(error);
+                    await saveGenerationTrace(context, {
+                        request_id: traceMeta.requestId,
+                        created_at: traceMeta.createdAt,
+                        streamed: true,
+                        request: payload,
+                        response: errorPayload,
+                    });
+                    return jsonResponse(errorPayload, 502);
                 }
 
+                await saveGenerationTrace(context, {
+                    request_id: traceMeta.requestId,
+                    created_at: traceMeta.createdAt,
+                    streamed: true,
+                    request: payload,
+                    response: buildErrorCompletionPayload(error, payload),
+                });
                 return createImmediateErrorStreamResponse(error, payload);
             }
 
             if (isQuiet) {
-                return jsonResponse(buildLegacyErrorPayload(error), 502);
+                const errorPayload = buildLegacyErrorPayload(error);
+                await saveGenerationTrace(context, {
+                    request_id: traceMeta.requestId,
+                    created_at: traceMeta.createdAt,
+                    streamed: false,
+                    request: payload,
+                    response: errorPayload,
+                });
+                return jsonResponse(errorPayload, 502);
             }
 
-            return jsonResponse(buildErrorCompletionPayload(error, payload));
+            const errorPayload = buildErrorCompletionPayload(error, payload);
+            await saveGenerationTrace(context, {
+                request_id: traceMeta.requestId,
+                created_at: traceMeta.createdAt,
+                streamed: false,
+                request: payload,
+                response: errorPayload,
+            });
+            return jsonResponse(errorPayload);
         }
     });
 

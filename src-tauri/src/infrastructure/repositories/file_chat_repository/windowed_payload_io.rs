@@ -84,7 +84,19 @@ pub(super) fn cursor_from_metadata(
         offset,
         size,
         modified_millis,
+        start_index: None,
+        total_messages: None,
     })
+}
+
+pub(super) fn cursor_with_window_metadata(
+    mut cursor: ChatPayloadCursor,
+    start_index: usize,
+    total_messages: usize,
+) -> ChatPayloadCursor {
+    cursor.start_index = Some(start_index);
+    cursor.total_messages = Some(total_messages);
+    cursor
 }
 
 pub(super) fn decode_jsonl_line_bytes(bytes: &[u8]) -> Result<String, DomainError> {
@@ -141,6 +153,55 @@ pub(super) async fn read_first_line_and_end_offset(
         bytes.extend_from_slice(&buffer[..read]);
         offset += read as u64;
     }
+}
+
+pub(super) async fn count_body_lines(path: &Path, start_offset: u64) -> Result<usize, DomainError> {
+    let metadata = read_existing_payload_metadata(path).await?;
+    if start_offset >= metadata.len() {
+        return Ok(0);
+    }
+
+    let mut file = open_existing_payload_file(path).await?;
+    file.seek(SeekFrom::Start(start_offset))
+        .await
+        .map_err(|error| {
+            DomainError::InternalError(format!(
+                "Failed to seek chat payload file {:?}: {}",
+                path, error
+            ))
+        })?;
+
+    let mut buffer = vec![0u8; WINDOW_READ_CHUNK_BYTES];
+    let mut count: usize = 0;
+    let mut saw_bytes = false;
+    let mut last_byte: Option<u8> = None;
+
+    loop {
+        let read = file.read(&mut buffer).await.map_err(|error| {
+            DomainError::InternalError(format!(
+                "Failed to read chat payload file {:?}: {}",
+                path, error
+            ))
+        })?;
+
+        if read == 0 {
+            break;
+        }
+
+        saw_bytes = true;
+        count += buffer[..read].iter().filter(|&&byte| byte == b'\n').count();
+        last_byte = buffer[..read].last().copied();
+    }
+
+    if !saw_bytes {
+        return Ok(0);
+    }
+
+    Ok(if matches!(last_byte, Some(b'\n')) {
+        count
+    } else {
+        count + 1
+    })
 }
 
 pub(super) fn extract_integrity_slug_from_header_line(

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Frontend Backend Compat Guard"
+  short_description: "Render-only frontend, backend-owned logic, ST-compatible speed."
+  default_prompt: "Use $frontend-backend-compat-guard to keep the frontend render-only and move computation, storage, and compatibility logic into the backend."

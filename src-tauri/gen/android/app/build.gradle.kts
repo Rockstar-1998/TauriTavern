@@ -14,13 +14,24 @@ val tauriProperties = Properties().apply {
         propFile.inputStream().use { load(it) }
     }
 }
+val androidAppIdOverride = System.getenv("TAURITAVERN_ANDROID_APP_ID")?.takeIf { it.isNotBlank() }
+val androidAppLabelOverride = System.getenv("TAURITAVERN_ANDROID_APP_LABEL")?.takeIf { it.isNotBlank() }
+val keystorePropertiesFile = rootProject.file("keystore.properties")
+val hasReleaseKeystore = keystorePropertiesFile.exists()
+val keystoreProperties = Properties().apply {
+    if (hasReleaseKeystore) {
+        load(FileInputStream(keystorePropertiesFile))
+    }
+}
 
 android {
     compileSdk = 36
     namespace = "com.tauritavern.client"
     defaultConfig {
+        manifestPlaceholders["appLabel"] = androidAppLabelOverride ?: "@string/app_name"
+        manifestPlaceholders["mainActivityTitle"] = androidAppLabelOverride ?: "@string/main_activity_title"
         manifestPlaceholders["usesCleartextTraffic"] = "false"
-        applicationId = "com.tauritavern.client"
+        applicationId = androidAppIdOverride ?: "com.tauritavern.client"
         minSdk = 24
         targetSdk = 36
         versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1").toInt()
@@ -28,16 +39,12 @@ android {
     }
     signingConfigs {
         create("release") {
-            val keystorePropertiesFile = rootProject.file("keystore.properties")
-            val keystoreProperties = Properties()
-            if (keystorePropertiesFile.exists()) {
-                keystoreProperties.load(FileInputStream(keystorePropertiesFile))
+            if (hasReleaseKeystore) {
+                keyAlias = keystoreProperties["keyAlias"] as String
+                keyPassword = keystoreProperties["password"] as String
+                storeFile = file(keystoreProperties["storeFile"] as String)
+                storePassword = keystoreProperties["password"] as String
             }
-
-            keyAlias = keystoreProperties["keyAlias"] as String
-            keyPassword = keystoreProperties["password"] as String
-            storeFile = file(keystoreProperties["storeFile"] as String)
-            storePassword = keystoreProperties["password"] as String
         }
     }
     buildTypes {
@@ -55,7 +62,11 @@ android {
         getByName("release") {
             isMinifyEnabled = true
             isShrinkResources = true
-            signingConfig = signingConfigs.getByName("release")
+            if (hasReleaseKeystore) {
+                signingConfig = signingConfigs.getByName("release")
+            } else {
+                println("Release keystore not found. Building an unsigned release APK.")
+            }
             proguardFiles(
                 *fileTree(".") { include("**/*.pro") }
                     .plus(getDefaultProguardFile("proguard-android-optimize.txt"))

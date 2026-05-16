@@ -120,4 +120,40 @@ export function registerSettingsRoutes(router, context, { jsonResponse }) {
 
         return jsonResponse(result || { isDefault: false, preset: {} });
     });
+
+    router.post('/api/presets/get', async ({ body }) => {
+        const result = await context.safeInvoke('get_preset', {
+            name: body?.name || '',
+            api_id: body?.apiId || '',
+        });
+
+        return jsonResponse(result ?? null);
+    });
+
+    router.post('/api/presets/list', async ({ body }) => {
+        const result = await context.safeInvoke('list_presets', {
+            api_id: body?.apiId || '',
+        });
+
+        return jsonResponse(Array.isArray(result) ? result : []);
+    });
+
+    router.post('/api/debug/log', async ({ body }) => {
+        const message = String(body?.message || '').trim();
+        const detail = body?.detail ?? null;
+        if (!message) {
+            return jsonResponse({ ok: true });
+        }
+
+        try {
+            await context.safeInvoke('log_frontend_event', {
+                message,
+                detail,
+            });
+        } catch (error) {
+            console.warn('Failed to log frontend event:', error);
+        }
+
+        return jsonResponse({ ok: true });
+    });
 }

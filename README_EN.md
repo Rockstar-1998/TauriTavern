@@ -1,5 +1,13 @@
 # TauriTavern
 
+> The default frontend is now `frontend/` (SolidJS + TypeScript + Vite).
+>
+> The legacy frontend under `src/` is kept only as a **legacy fallback** and is marked as **to be removed soon**.
+>
+> Common commands: `npm run dev`, `npm run build`, `npm run dev:legacy`, `npm run start`.
+>
+> Windows double-click launcher: `start.cmd`.
+
 TauriTavern ports SillyTavern into a native desktop app with Tauri v2 + Rust backend while keeping the upstream frontend experience. The frontend is now synced to SillyTavern 1.15.0 and integrated through a modular Tauri injection layer.
 
 ## Highlights
@@ -36,25 +44,25 @@ Frontend startup flow:
 
 ```text
 src/
-├── tauri-bridge.js              # low-level Tauri bridge (invoke/listen/convertFileSrc)
-├── tauri-main.js                # thin bootstrap entry
-├── init.js                      # startup orchestrator
-├── lib.js                       # library facade (ESM exports)
-├── dist/lib.bundle.js           # webpack-built vendor bundle
-└── tauri/main/
-    ├── bootstrap.js             # composition root
-    ├── context.js               # shared state + domain helpers
-    ├── http-utils.js            # request/response parsing helpers
-    ├── interceptors.js          # fetch/jQuery ajax patching
-    ├── router.js                # lightweight route registry
-    └── routes/
-        ├── system-routes.js
-        ├── settings-routes.js
-        ├── extensions-routes.js
-        ├── resource-routes.js
-        ├── character-routes.js
-        ├── chat-routes.js
-        └── ai-routes.js
+閳规壕鏀㈤埞鈧?tauri-bridge.js              # low-level Tauri bridge (invoke/listen/convertFileSrc)
+閳规壕鏀㈤埞鈧?tauri-main.js                # thin bootstrap entry
+閳规壕鏀㈤埞鈧?init.js                      # startup orchestrator
+閳规壕鏀㈤埞鈧?lib.js                       # library facade (ESM exports)
+閳规壕鏀㈤埞鈧?dist/lib.bundle.js           # webpack-built vendor bundle
+閳规柡鏀㈤埞鈧?tauri/main/
+    閳规壕鏀㈤埞鈧?bootstrap.js             # composition root
+    閳规壕鏀㈤埞鈧?context.js               # shared state + domain helpers
+    閳规壕鏀㈤埞鈧?http-utils.js            # request/response parsing helpers
+    閳规壕鏀㈤埞鈧?interceptors.js          # fetch/jQuery ajax patching
+    閳规壕鏀㈤埞鈧?router.js                # lightweight route registry
+    閳规柡鏀㈤埞鈧?routes/
+        閳规壕鏀㈤埞鈧?system-routes.js
+        閳规壕鏀㈤埞鈧?settings-routes.js
+        閳规壕鏀㈤埞鈧?extensions-routes.js
+        閳规壕鏀㈤埞鈧?resource-routes.js
+        閳规壕鏀㈤埞鈧?character-routes.js
+        閳规壕鏀㈤埞鈧?chat-routes.js
+        閳规柡鏀㈤埞鈧?ai-routes.js
 ```
 
 ## Development

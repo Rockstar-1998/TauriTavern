@@ -1,0 +1,31 @@
+[env]
+TEMP = "D:\\data\\TauriTavern\\.tmp"
+TMP = "D:\\data\\TauriTavern\\.tmp"
+TMPDIR = "D:\\data\\TauriTavern\\.tmp"
+
+[source.crates-io]
+replace-with = 'rsproxy-sparse'
+
+[source.rsproxy]
+registry = "https://rsproxy.cn/crates.io-index"
+
+[source.rsproxy-sparse]
+registry = "sparse+https://rsproxy.cn/index/"
+
+[net]
+git-fetch-with-cli = true
+
+[http]
+check-revocation = false
+
+[target.aarch64-linux-android]
+linker = "E:\\LibSoftware\\android_sdk\\ndk\\29.0.14206865\\toolchains\\llvm\\prebuilt\\windows-x86_64\\bin\\aarch64-linux-android24-clang.cmd"
+
+[target.armv7-linux-androideabi]
+linker = "E:\\LibSoftware\\android_sdk\\ndk\\29.0.14206865\\toolchains\\llvm\\prebuilt\\windows-x86_64\\bin\\armv7a-linux-androideabi24-clang.cmd"
+
+[target.i686-linux-android]
+linker = "E:\\LibSoftware\\android_sdk\\ndk\\29.0.14206865\\toolchains\\llvm\\prebuilt\\windows-x86_64\\bin\\i686-linux-android24-clang.cmd"
+
+[target.x86_64-linux-android]
+linker = "E:\\LibSoftware\\android_sdk\\ndk\\29.0.14206865\\toolchains\\llvm\\prebuilt\\windows-x86_64\\bin\\x86_64-linux-android24-clang.cmd"

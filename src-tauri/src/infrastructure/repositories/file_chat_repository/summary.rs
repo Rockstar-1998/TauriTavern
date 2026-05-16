@@ -15,7 +15,7 @@ use crate::infrastructure::persistence::file_system::list_files_with_extension;
 
 use super::FileChatRepository;
 
-const INDEX_SCHEMA_VERSION: u32 = 1;
+const INDEX_SCHEMA_VERSION: u32 = 2;
 const FINGERPRINT_WORDS: usize = 64; // 4096 bits
 const MAX_SEARCH_CACHE_ENTRIES: usize = 128;
 
@@ -786,6 +786,18 @@ impl FileChatRepository {
                     .or_else(|| value.as_i64().map(|number| number.to_string()))
                     .or_else(|| value.as_str().map(ToString::to_string))
             });
+        let session_mode = header
+            .get("chat_metadata")
+            .and_then(Value::as_object)
+            .and_then(|meta| meta.get("tauritavern"))
+            .and_then(Value::as_object)
+            .and_then(|tauritavern| tauritavern.get("session"))
+            .and_then(Value::as_object)
+            .and_then(|session| session.get("mode"))
+            .and_then(Value::as_str)
+            .filter(|mode| matches!(*mode, "single" | "multiplayer"))
+            .unwrap_or("single")
+            .to_string();
 
         let metadata = header.get("chat_metadata").cloned();
         let message_count = line_count.saturating_sub(1);
@@ -811,6 +823,7 @@ impl FileChatRepository {
                 preview,
                 date,
                 chat_id,
+                session_mode,
                 chat_metadata: metadata,
             },
             fingerprint,

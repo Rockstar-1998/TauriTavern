@@ -219,6 +219,14 @@ impl CharacterRepository for FileCharacterRepository {
                 self.import_from_json_file(file_path, file_data, preserve_file_name.as_deref())
                     .await
             }
+            "yaml" | "yml" => {
+                self.import_from_yaml_file(file_path, file_data, preserve_file_name.as_deref())
+                    .await
+            }
+            "charx" => {
+                self.import_from_charx_file(file_path, file_data, preserve_file_name.as_deref())
+                    .await
+            }
             _ => Err(DomainError::InvalidData(format!(
                 "Unsupported file format: {}",
                 extension

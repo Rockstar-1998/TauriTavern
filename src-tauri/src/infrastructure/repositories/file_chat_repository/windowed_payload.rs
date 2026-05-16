@@ -240,9 +240,12 @@ async fn read_payload_tail_lines(
 
     let (header, header_end_offset) = read_first_line_and_end_offset(path).await?;
     let end_position = metadata.len();
+    let total_messages = count_body_lines(path, header_end_offset).await?;
 
     let lines_with_offsets =
         read_tail_lines_with_offsets(path, header_end_offset, end_position, max_lines).await?;
+    let loaded_messages = lines_with_offsets.len();
+    let start_index = total_messages.saturating_sub(loaded_messages);
 
     let cursor_offset = lines_with_offsets
         .first()
@@ -255,8 +258,14 @@ async fn read_payload_tail_lines(
             .into_iter()
             .map(|(_, line)| line)
             .collect(),
-        cursor: cursor_from_metadata(cursor_offset, &metadata)?,
+        cursor: cursor_with_window_metadata(
+            cursor_from_metadata(cursor_offset, &metadata)?,
+            start_index,
+            total_messages,
+        ),
         has_more_before: cursor_offset > header_end_offset,
+        start_index,
+        total_messages,
     })
 }
 
@@ -269,6 +278,9 @@ async fn read_payload_before_lines(
     verify_cursor_signature(path, cursor, &metadata)?;
 
     let (_, header_end_offset) = read_first_line_and_end_offset(path).await?;
+    let total_messages = cursor
+        .total_messages
+        .unwrap_or(count_body_lines(path, header_end_offset).await?);
 
     if cursor.offset > metadata.len() {
         return Err(DomainError::InvalidData(format!(
@@ -287,19 +299,30 @@ async fn read_payload_before_lines(
 
     let lines_with_offsets =
         read_tail_lines_with_offsets(path, header_end_offset, end_position, max_lines).await?;
+    let loaded_messages = lines_with_offsets.len();
 
     let new_offset = lines_with_offsets
         .first()
         .map(|(offset, _)| *offset)
         .unwrap_or(header_end_offset);
+    let start_index = cursor
+        .start_index
+        .unwrap_or(total_messages.saturating_sub(loaded_messages))
+        .saturating_sub(loaded_messages);
 
     Ok(ChatPayloadChunk {
         lines: lines_with_offsets
             .into_iter()
             .map(|(_, line)| line)
             .collect(),
-        cursor: cursor_from_metadata(new_offset, &metadata)?,
+        cursor: cursor_with_window_metadata(
+            cursor_from_metadata(new_offset, &metadata)?,
+            start_index,
+            total_messages,
+        ),
         has_more_before: new_offset > header_end_offset,
+        start_index,
+        total_messages,
     })
 }
 

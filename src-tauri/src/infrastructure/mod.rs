@@ -4,6 +4,7 @@ pub mod assets;
 pub mod http_client;
 pub mod lan_sync;
 pub mod logging;
+pub mod multiplayer;
 pub mod paths;
 pub mod persistence;
 pub mod repositories;

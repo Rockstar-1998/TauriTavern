@@ -5,6 +5,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 
+fn default_session_mode() -> String {
+    "single".to_string()
+}
+
 /// Chat search result
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatSearchResult {
@@ -15,6 +19,8 @@ pub struct ChatSearchResult {
     pub preview: String,
     pub date: i64,
     pub chat_id: Option<String>,
+    #[serde(default = "default_session_mode")]
+    pub session_mode: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub chat_metadata: Option<Value>,
 }
@@ -58,6 +64,10 @@ pub struct ChatPayloadCursor {
     pub offset: u64,
     pub size: u64,
     pub modified_millis: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start_index: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub total_messages: Option<usize>,
 }
 
 /// Tail window for a chat JSONL payload.
@@ -68,6 +78,8 @@ pub struct ChatPayloadTail {
     pub lines: Vec<String>,
     pub cursor: ChatPayloadCursor,
     pub has_more_before: bool,
+    pub start_index: usize,
+    pub total_messages: usize,
 }
 
 /// Window chunk returned for pagination requests.
@@ -77,6 +89,8 @@ pub struct ChatPayloadChunk {
     pub lines: Vec<String>,
     pub cursor: ChatPayloadCursor,
     pub has_more_before: bool,
+    pub start_index: usize,
+    pub total_messages: usize,
 }
 
 /// Operation-based patch for windowed JSONL payload writes.

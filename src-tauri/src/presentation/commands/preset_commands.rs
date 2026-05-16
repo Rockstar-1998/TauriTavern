@@ -7,7 +7,7 @@ use crate::application::dto::preset_dto::{
     DeleteOpenAIPresetDto, DeleteOpenAIPresetResponseDto, DeletePresetDto, RestorePresetDto,
     RestorePresetResponseDto, SaveOpenAIPresetDto, SavePresetDto, SavePresetResponseDto,
 };
-use crate::domain::models::preset::PresetType;
+use crate::domain::models::preset::{PresetType, canonical_preset_name};
 use crate::infrastructure::logging::logger;
 use crate::presentation::errors::CommandError;
 
@@ -56,8 +56,9 @@ pub async fn save_preset(
             CommandError::from(e)
         })?;
 
-    logger::info(&format!("Preset saved successfully: {}", preset.name));
-    Ok(SavePresetResponseDto::new(preset.name))
+    let canonical_name = canonical_preset_name(&preset.name);
+    logger::info(&format!("Preset saved successfully: {}", canonical_name));
+    Ok(SavePresetResponseDto::new(canonical_name))
 }
 
 /// Delete a preset
@@ -184,11 +185,12 @@ pub async fn save_openai_preset(
             CommandError::from(e)
         })?;
 
+    let canonical_name = canonical_preset_name(&preset.name);
     logger::info(&format!(
         "OpenAI preset saved successfully: {}",
-        preset.name
+        canonical_name
     ));
-    Ok(SavePresetResponseDto::new(preset.name))
+    Ok(SavePresetResponseDto::new(canonical_name))
 }
 
 /// Delete an OpenAI preset (specialized endpoint)

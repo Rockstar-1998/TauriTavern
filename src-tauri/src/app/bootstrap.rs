@@ -9,11 +9,18 @@ use crate::application::services::character_service::CharacterService;
 use crate::application::services::chat_completion_service::ChatCompletionService;
 use crate::application::services::chat_service::ChatService;
 use crate::application::services::content_service::ContentService;
+use crate::application::services::display_projection_service::DisplayProjectionService;
 use crate::application::services::extension_service::ExtensionService;
+use crate::application::services::generation_binding_service::GenerationBindingService;
+use crate::application::services::generation_prepare_service::GenerationPrepareService;
+use crate::application::services::generation_trace_service::GenerationTraceService;
 use crate::application::services::group_service::GroupService;
 use crate::application::services::lan_sync_service::LanSyncService;
+use crate::application::services::multiplayer_room_service::MultiplayerRoomService;
+use crate::application::services::player_persona_service::PlayerPersonaService;
 use crate::application::services::preset_service::PresetService;
 use crate::application::services::quick_reply_service::QuickReplyService;
+use crate::application::services::renderer_service::RendererService;
 use crate::application::services::secret_service::SecretService;
 use crate::application::services::settings_service::SettingsService;
 use crate::application::services::theme_service::ThemeService;
@@ -21,6 +28,7 @@ use crate::application::services::tokenization_service::TokenizationService;
 use crate::application::services::update_service::UpdateService;
 use crate::application::services::user_directory_service::UserDirectoryService;
 use crate::application::services::user_service::UserService;
+use crate::application::services::workbench_stats_service::WorkbenchStatsService;
 use crate::application::services::world_info_service::WorldInfoService;
 use crate::domain::errors::DomainError;
 use crate::domain::repositories::avatar_repository::AvatarRepository;
@@ -32,7 +40,9 @@ use crate::domain::repositories::content_repository::ContentRepository;
 use crate::domain::repositories::extension_repository::ExtensionRepository;
 use crate::domain::repositories::group_repository::GroupRepository;
 use crate::domain::repositories::preset_repository::PresetRepository;
+use crate::domain::repositories::player_persona_repository::PlayerPersonaRepository;
 use crate::domain::repositories::quick_reply_repository::QuickReplyRepository;
+use crate::domain::repositories::renderer_repository::RendererRepository;
 use crate::domain::repositories::secret_repository::SecretRepository;
 use crate::domain::repositories::settings_repository::SettingsRepository;
 use crate::domain::repositories::theme_repository::ThemeRepository;
@@ -44,6 +54,7 @@ use crate::domain::repositories::world_info_repository::WorldInfoRepository;
 use crate::infrastructure::apis::github_update_repository::GitHubUpdateRepository;
 use crate::infrastructure::apis::http_chat_completion_repository::HttpChatCompletionRepository;
 use crate::infrastructure::apis::miktik_tokenizer_repository::MiktikTokenizerRepository;
+use crate::infrastructure::multiplayer::runtime::MultiplayerRuntime;
 use crate::infrastructure::persistence::file_system::DataDirectory;
 use crate::infrastructure::repositories::file_avatar_repository::FileAvatarRepository;
 use crate::infrastructure::repositories::file_background_repository::FileBackgroundRepository;
@@ -53,7 +64,9 @@ use crate::infrastructure::repositories::file_content_repository::FileContentRep
 use crate::infrastructure::repositories::file_extension_repository::FileExtensionRepository;
 use crate::infrastructure::repositories::file_group_repository::FileGroupRepository;
 use crate::infrastructure::repositories::file_preset_repository::FilePresetRepository;
+use crate::infrastructure::repositories::file_player_persona_repository::FilePlayerPersonaRepository;
 use crate::infrastructure::repositories::file_quick_reply_repository::FileQuickReplyRepository;
+use crate::infrastructure::repositories::file_renderer_repository::FileRendererRepository;
 use crate::infrastructure::repositories::file_secret_repository::FileSecretRepository;
 use crate::infrastructure::repositories::file_settings_repository::FileSettingsRepository;
 use crate::infrastructure::repositories::file_theme_repository::FileThemeRepository;
@@ -67,19 +80,27 @@ pub(super) struct AppServices {
     pub user_service: Arc<UserService>,
     pub settings_service: Arc<SettingsService>,
     pub user_directory_service: Arc<UserDirectoryService>,
+    pub workbench_stats_service: Arc<WorkbenchStatsService>,
     pub secret_service: Arc<SecretService>,
     pub content_service: Arc<ContentService>,
+    pub display_projection_service: Arc<DisplayProjectionService>,
     pub extension_service: Arc<ExtensionService>,
+    pub generation_binding_service: Arc<GenerationBindingService>,
+    pub generation_prepare_service: Arc<GenerationPrepareService>,
+    pub generation_trace_service: Arc<GenerationTraceService>,
     pub avatar_service: Arc<AvatarService>,
     pub group_service: Arc<GroupService>,
     pub background_service: Arc<BackgroundService>,
     pub theme_service: Arc<ThemeService>,
     pub preset_service: Arc<PresetService>,
     pub quick_reply_service: Arc<QuickReplyService>,
+    pub renderer_service: Arc<RendererService>,
     pub chat_completion_service: Arc<ChatCompletionService>,
     pub tokenization_service: Arc<TokenizationService>,
     pub world_info_service: Arc<WorldInfoService>,
     pub lan_sync_service: Arc<LanSyncService>,
+    pub multiplayer_room_service: Arc<MultiplayerRoomService>,
+    pub player_persona_service: Arc<PlayerPersonaService>,
     pub update_service: Arc<UpdateService>,
 }
 
@@ -98,9 +119,11 @@ struct AppRepositories {
     theme_repository: Arc<dyn ThemeRepository>,
     preset_repository: Arc<dyn PresetRepository>,
     quick_reply_repository: Arc<dyn QuickReplyRepository>,
+    renderer_repository: Arc<dyn RendererRepository>,
     chat_completion_repository: Arc<dyn ChatCompletionRepository>,
     tokenizer_repository: Arc<dyn TokenizerRepository>,
     world_info_repository: Arc<dyn WorldInfoRepository>,
+    player_persona_repository: Arc<dyn PlayerPersonaRepository>,
     update_repository: Arc<dyn UpdateRepository>,
 }
 
@@ -123,6 +146,14 @@ pub(super) fn build_services(
         repositories.extension_repository.clone(),
     ));
     let avatar_service = Arc::new(AvatarService::new(repositories.avatar_repository.clone()));
+    let generation_binding_service = Arc::new(GenerationBindingService::new(
+        repositories.settings_repository.clone(),
+        repositories.preset_repository.clone(),
+        repositories.world_info_repository.clone(),
+    ));
+    let display_projection_service = Arc::new(DisplayProjectionService::new(
+        generation_binding_service.clone(),
+    ));
     let group_service = Arc::new(GroupService::new(repositories.group_repository.clone()));
     let background_service = Arc::new(BackgroundService::new(
         repositories.background_repository.clone(),
@@ -132,17 +163,28 @@ pub(super) fn build_services(
     let quick_reply_service = Arc::new(QuickReplyService::new(
         repositories.quick_reply_repository.clone(),
     ));
+    let renderer_service = Arc::new(RendererService::new(
+        repositories.renderer_repository.clone(),
+    ));
     let chat_completion_service = Arc::new(ChatCompletionService::new(
         repositories.chat_completion_repository,
         repositories.secret_repository.clone(),
     ));
     let tokenization_service =
         Arc::new(TokenizationService::new(repositories.tokenizer_repository));
+    let generation_prepare_service = Arc::new(GenerationPrepareService::new(
+        repositories.settings_repository.clone(),
+        generation_binding_service.clone(),
+        tokenization_service.clone(),
+    ));
     let world_info_service = Arc::new(WorldInfoService::new(
         repositories.world_info_repository.clone(),
     ));
 
     let update_service = Arc::new(UpdateService::new(repositories.update_repository));
+    let player_persona_service = Arc::new(PlayerPersonaService::new(
+        repositories.player_persona_repository.clone(),
+    ));
 
     let character_service = Arc::new(CharacterService::new(
         repositories.character_repository.clone(),
@@ -157,11 +199,18 @@ pub(super) fn build_services(
     let user_directory_service = Arc::new(UserDirectoryService::new(
         repositories.user_directory_repository,
     ));
+    let workbench_stats_service = Arc::new(WorkbenchStatsService::new(
+        data_directory.default_user().join("stats.json"),
+    ));
+    let generation_trace_service =
+        Arc::new(GenerationTraceService::new(user_directory_service.clone()));
     let lan_sync_service = Arc::new(LanSyncService::new(
         app_handle.clone(),
         data_directory.root().to_path_buf(),
         data_directory.default_user().to_path_buf(),
     ));
+    let multiplayer_runtime = Arc::new(MultiplayerRuntime::new(app_handle.clone()));
+    let multiplayer_room_service = Arc::new(MultiplayerRoomService::new(multiplayer_runtime));
 
     // Do not expose secrets by default; this can be enabled by configuration later.
     let secret_service = Arc::new(SecretService::new(repositories.secret_repository, false));
@@ -172,19 +221,27 @@ pub(super) fn build_services(
         user_service,
         settings_service,
         user_directory_service,
+        workbench_stats_service,
         secret_service,
         content_service,
+        display_projection_service,
         extension_service,
+        generation_binding_service,
+        generation_prepare_service,
+        generation_trace_service,
         avatar_service,
         group_service,
         background_service,
         theme_service,
         preset_service,
         quick_reply_service,
+        renderer_service,
         chat_completion_service,
         tokenization_service,
         world_info_service,
         lan_sync_service,
+        multiplayer_room_service,
+        player_persona_service,
         update_service,
     })
 }
@@ -263,6 +320,9 @@ fn build_repositories(
     let quick_reply_repository: Arc<dyn QuickReplyRepository> = Arc::new(
         FileQuickReplyRepository::new(data_directory.default_user().join("QuickReplies")),
     );
+    let renderer_repository: Arc<dyn RendererRepository> = Arc::new(FileRendererRepository::new(
+        data_directory.renderers().to_path_buf(),
+    ));
 
     let chat_completion_repository: Arc<dyn ChatCompletionRepository> =
         Arc::new(HttpChatCompletionRepository::new()?);
@@ -271,6 +331,12 @@ fn build_repositories(
         Arc::new(MiktikTokenizerRepository::new(tokenizer_cache_dir)?);
     let world_info_repository: Arc<dyn WorldInfoRepository> = Arc::new(
         FileWorldInfoRepository::new(data_directory.default_user().join("worlds")),
+    );
+    let player_persona_repository: Arc<dyn PlayerPersonaRepository> = Arc::new(
+        FilePlayerPersonaRepository::new(
+            data_directory.default_user().join("player-personas"),
+            data_directory.default_user().join("player-persona-avatars"),
+        ),
     );
 
     let update_repository: Arc<dyn UpdateRepository> = Arc::new(GitHubUpdateRepository::new()?);
@@ -290,9 +356,11 @@ fn build_repositories(
         theme_repository,
         preset_repository,
         quick_reply_repository,
+        renderer_repository,
         chat_completion_repository,
         tokenizer_repository,
         world_info_repository,
+        player_persona_repository,
         update_repository,
     })
 }

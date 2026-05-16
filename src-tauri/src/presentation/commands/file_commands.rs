@@ -8,6 +8,7 @@ use serde::Serialize;
 use tauri::State;
 use tokio::fs;
 use url::Url;
+use uuid::Uuid;
 
 use crate::app::AppState;
 use crate::presentation::commands::helpers::log_command;
@@ -99,6 +100,16 @@ pub struct UserFileAssetPayload {
     pub mime_type: String,
 }
 
+#[derive(Debug, Serialize)]
+pub struct StagedFrontendFileResult {
+    pub file_path: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SavedExportFileResult {
+    pub path: String,
+}
+
 fn normalize_relative_path(raw: &str) -> Result<PathBuf, CommandError> {
     let normalized = String::from(raw)
         .replace('\\', "/")
@@ -174,6 +185,32 @@ fn validate_upload_name(raw: &str) -> Result<String, CommandError> {
     Ok(name)
 }
 
+fn sanitize_frontend_file_name(raw: &str, fallback: &str) -> Result<String, CommandError> {
+    let candidate = String::from(raw).trim().to_string();
+    let source = if candidate.is_empty() {
+        fallback
+    } else {
+        &candidate
+    };
+    let sanitized = source
+        .chars()
+        .map(|character| match character {
+            '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => '_',
+            _ if character.is_control() => '_',
+            _ => character,
+        })
+        .collect::<String>()
+        .trim()
+        .trim_end_matches(['.', ' '])
+        .to_string();
+
+    if sanitized.is_empty() {
+        return Err(CommandError::BadRequest("Invalid file name".to_string()));
+    }
+
+    Ok(sanitized)
+}
+
 fn normalize_user_file_reference(raw: &str) -> Result<PathBuf, CommandError> {
     let mut value = String::from(raw).trim().to_string();
     if value.is_empty() {
@@ -215,6 +252,33 @@ async fn get_default_user_files_directory(
     })?;
 
     Ok(files_dir)
+}
+
+async fn ensure_frontend_stage_directory(
+    app_state: &Arc<AppState>,
+) -> Result<PathBuf, CommandError> {
+    let files_dir = get_default_user_files_directory(app_state).await?;
+    let stage_dir = files_dir.join("_frontend_uploads");
+
+    fs::create_dir_all(&stage_dir).await.map_err(|error| {
+        CommandError::InternalServerError(format!(
+            "Failed to ensure staged uploads directory: {}",
+            error
+        ))
+    })?;
+
+    Ok(stage_dir)
+}
+
+async fn ensure_export_directory(app_state: &Arc<AppState>) -> Result<PathBuf, CommandError> {
+    let files_dir = get_default_user_files_directory(app_state).await?;
+    let export_dir = files_dir.join("exports");
+
+    fs::create_dir_all(&export_dir).await.map_err(|error| {
+        CommandError::InternalServerError(format!("Failed to ensure export directory: {}", error))
+    })?;
+
+    Ok(export_dir)
 }
 
 #[tauri::command]
@@ -316,6 +380,82 @@ pub async fn verify_user_files(
     }
 
     Ok(result)
+}
+
+#[tauri::command]
+pub async fn stage_frontend_file(
+    name: String,
+    data: Vec<u8>,
+    app_state: State<'_, Arc<AppState>>,
+) -> Result<StagedFrontendFileResult, CommandError> {
+    log_command(format!("stage_frontend_file {}", name));
+
+    if data.is_empty() {
+        return Err(CommandError::BadRequest(
+            "No file data specified".to_string(),
+        ));
+    }
+
+    let stage_dir = ensure_frontend_stage_directory(&app_state).await?;
+    let safe_name = sanitize_frontend_file_name(&name, "upload.bin")?;
+    let staged_name = format!("{}-{}", Uuid::new_v4(), safe_name);
+    let target_path = resolve_target_path(&stage_dir, Path::new(&staged_name))?;
+
+    fs::write(&target_path, &data).await.map_err(|error| {
+        CommandError::InternalServerError(format!("Failed to stage file: {}", error))
+    })?;
+
+    Ok(StagedFrontendFileResult {
+        file_path: target_path.to_string_lossy().to_string(),
+    })
+}
+
+#[tauri::command]
+pub async fn cleanup_frontend_file(file_path: String) -> Result<(), CommandError> {
+    log_command(format!("cleanup_frontend_file {}", file_path));
+
+    let path = PathBuf::from(file_path.trim());
+    if path.as_os_str().is_empty() {
+        return Err(CommandError::BadRequest(
+            "No file path specified".to_string(),
+        ));
+    }
+
+    match fs::remove_file(&path).await {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(CommandError::InternalServerError(format!(
+            "Failed to cleanup staged file: {}",
+            error
+        ))),
+    }
+}
+
+#[tauri::command]
+pub async fn save_export_file(
+    output_name: String,
+    data: Vec<u8>,
+    app_state: State<'_, Arc<AppState>>,
+) -> Result<SavedExportFileResult, CommandError> {
+    log_command(format!("save_export_file {}", output_name));
+
+    if data.is_empty() {
+        return Err(CommandError::BadRequest(
+            "No export data specified".to_string(),
+        ));
+    }
+
+    let export_dir = ensure_export_directory(&app_state).await?;
+    let safe_name = sanitize_frontend_file_name(&output_name, "export.bin")?;
+    let target_path = resolve_target_path(&export_dir, Path::new(&safe_name))?;
+
+    fs::write(&target_path, &data).await.map_err(|error| {
+        CommandError::InternalServerError(format!("Failed to save export file: {}", error))
+    })?;
+
+    Ok(SavedExportFileResult {
+        path: target_path.to_string_lossy().to_string(),
+    })
 }
 
 #[cfg(test)]

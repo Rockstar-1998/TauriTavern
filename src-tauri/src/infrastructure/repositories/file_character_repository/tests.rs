@@ -1,10 +1,11 @@
-use std::io::Cursor;
+use std::io::{Cursor, Write};
 use std::path::PathBuf;
 
 use image::{DynamicImage, ImageFormat, RgbaImage};
 use rand::random;
 use serde_json::json;
 use tokio::fs;
+use zip::write::SimpleFileOptions;
 
 use crate::domain::models::character::Character;
 use crate::domain::repositories::character_repository::CharacterRepository;
@@ -24,6 +25,20 @@ fn build_minimal_png() -> Vec<u8> {
         .write_to(&mut cursor, ImageFormat::Png)
         .expect("should build png image");
     output
+}
+
+fn build_charx_archive(entries: &[(&str, Vec<u8>)]) -> Vec<u8> {
+    let mut cursor = Cursor::new(Vec::new());
+    {
+        let mut writer = zip::ZipWriter::new(&mut cursor);
+        let options = SimpleFileOptions::default();
+        for (name, bytes) in entries {
+            writer.start_file(*name, options).expect("start zip entry");
+            writer.write_all(bytes).expect("write zip entry");
+        }
+        writer.finish().expect("finish zip archive");
+    }
+    cursor.into_inner()
 }
 
 async fn setup_repository() -> (FileCharacterRepository, PathBuf) {
@@ -114,6 +129,80 @@ async fn import_json_normalizes_preserved_file_name() {
     assert_eq!(imported.avatar, "Preserved.png");
     assert!(root.join("characters").join("Preserved.png").exists());
     assert!(!root.join("characters").join("Preserved.png.png").exists());
+
+    let _ = fs::remove_dir_all(&root).await;
+}
+
+#[tokio::test]
+async fn import_yaml_character_card_succeeds() {
+    let (repository, root) = setup_repository().await;
+
+    let yaml_payload = r#"
+name: YAML Character
+description: yaml desc
+personality: yaml persona
+first_mes: Hello from YAML
+tags:
+  - alpha
+  - beta
+"#;
+
+    let import_path = root.join("yaml-character.yml");
+    fs::write(&import_path, yaml_payload.as_bytes())
+        .await
+        .expect("write import yaml");
+
+    let imported = repository
+        .import_character(&import_path, None)
+        .await
+        .expect("import yaml character");
+
+    assert_eq!(imported.name, "YAML Character");
+    assert_eq!(imported.first_mes, "Hello from YAML");
+    assert_eq!(imported.tags, vec!["alpha".to_string(), "beta".to_string()]);
+    assert!(root.join("characters").join("YAML Character.png").exists());
+
+    let _ = fs::remove_dir_all(&root).await;
+}
+
+#[tokio::test]
+async fn import_charx_archive_uses_embedded_card_and_avatar() {
+    let (repository, root) = setup_repository().await;
+
+    let card_payload = json!({
+        "spec": "chara_card_v3",
+        "spec_version": "3.0",
+        "name": "Archive Character",
+        "description": "from archive",
+        "first_mes": "Hello from archive"
+    });
+
+    let archive_bytes = build_charx_archive(&[
+        (
+            "card.json",
+            serde_json::to_vec(&card_payload).expect("serialize archive card"),
+        ),
+        ("avatar.png", build_minimal_png()),
+    ]);
+
+    let import_path = root.join("archive.charx");
+    fs::write(&import_path, archive_bytes)
+        .await
+        .expect("write import charx");
+
+    let imported = repository
+        .import_character(&import_path, None)
+        .await
+        .expect("import charx character");
+
+    assert_eq!(imported.name, "Archive Character");
+    assert_eq!(imported.description, "from archive");
+    assert_eq!(imported.first_mes, "Hello from archive");
+    assert!(
+        root.join("characters")
+            .join("Archive Character.png")
+            .exists()
+    );
 
     let _ = fs::remove_dir_all(&root).await;
 }

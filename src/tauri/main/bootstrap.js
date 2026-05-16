@@ -1,4 +1,4 @@
-import { initializeBridge, invoke, isTauri as isTauriRuntime, convertFileSrc } from '../../tauri-bridge.js';
+﻿import { initializeBridge, invoke, isTauri as isTauriRuntime, convertFileSrc } from '../../tauri-bridge.js';
 import { createTauriMainContext } from './context.js';
 import { createDownloadBridge } from './download-bridge.js';
 import { createInterceptors } from './interceptors.js';
@@ -254,3 +254,4 @@ async function initializeTauriIntegration(context, interceptors, downloadBridge)
     interceptors.patchJQueryAjax();
     downloadBridge.patchWindow();
 }
+

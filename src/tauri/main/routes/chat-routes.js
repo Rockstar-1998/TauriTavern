@@ -56,6 +56,27 @@ function matchesSearch(fileStem, payload, query) {
     return fragments.every((fragment) => searchText.includes(fragment));
 }
 
+function getAvatarScopeId(avatar, fallbackName = '') {
+    const rawValue = String(avatar || fallbackName || '').trim();
+    if (!rawValue) {
+        return '';
+    }
+
+    try {
+        const decoded = decodeURIComponent(rawValue).split('?')[0].split('#')[0];
+        const normalized = decoded.replace(/[\\/]+/g, '/');
+        const fileName = normalized.split('/').pop() || decoded;
+        return fileName.replace(/\.[^/.]+$/, '') || fallbackName;
+    } catch {
+        return rawValue.replace(/\.[^/.]+$/, '') || fallbackName;
+    }
+}
+
+function normalizeChatTimestamp(value) {
+    const timestamp = Number(value || 0);
+    return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
 function normalizePinnedChats(value) {
     if (!Array.isArray(value)) {
         return [];
@@ -272,6 +293,120 @@ export function registerChatRoutes(router, context, { jsonResponse }) {
             : [];
 
         return jsonResponse(mapped);
+    });
+
+    router.post('/api/chats/summaries', async ({ body }) => {
+        const filter = String(body?.filter || 'all').trim().toLowerCase();
+        const query = String(body?.query || '');
+        const includeMetadata = Boolean(body?.include_metadata);
+        const includeCharacters = filter !== 'group';
+        const includeGroups = filter !== 'character';
+
+        const [groups] = await Promise.all([
+            includeGroups ? context.safeInvoke('get_all_groups') : Promise.resolve([]),
+            includeCharacters ? context.getAllCharacters({ shallow: true }) : Promise.resolve([]),
+        ]);
+
+        const groupById = new Map();
+        const groupChatToGroup = new Map();
+        if (Array.isArray(groups)) {
+            groups.forEach((group) => {
+                const groupId = String(group?.id || '').trim();
+                if (!groupId) {
+                    return;
+                }
+
+                groupById.set(groupId, group);
+                const chatIds = Array.isArray(group?.chats) ? group.chats : [];
+                chatIds.forEach((chatId) => {
+                    const fileStem = context.stripJsonl(chatId);
+                    if (!fileStem || groupChatToGroup.has(fileStem)) {
+                        return;
+                    }
+                    groupChatToGroup.set(fileStem, groupId);
+                });
+            });
+        }
+
+        const groupChatIds = Array.from(groupChatToGroup.keys());
+        const [characterSummaries, groupSummaries] = await Promise.all([
+            includeCharacters
+                ? (query.trim()
+                    ? context.safeInvoke('search_chats', {
+                        query,
+                        character_filter: null,
+                    })
+                    : context.safeInvoke('list_chat_summaries', {
+                        character_filter: null,
+                        include_metadata: includeMetadata,
+                    }))
+                : Promise.resolve([]),
+            includeGroups
+                ? (groupChatIds.length > 0
+                    ? (query.trim()
+                        ? context.safeInvoke('search_group_chats', {
+                            query,
+                            chat_ids: groupChatIds,
+                        })
+                        : context.safeInvoke('list_group_chat_summaries', {
+                            chat_ids: groupChatIds,
+                            include_metadata: includeMetadata,
+                        }))
+                    : Promise.resolve([]))
+                : Promise.resolve([]),
+        ]);
+
+        const characterEntries = Array.isArray(characterSummaries)
+            ? characterSummaries.map((chat) => {
+                const characterId = String(chat?.character_name || '').trim();
+                const fileName = context.ensureJsonl(chat?.file_name || '');
+                if (!characterId || !fileName) {
+                    return null;
+                }
+
+                const avatar = context.findAvatarByCharacterId(characterId) || '';
+                return {
+                    source_type: 'character',
+                    scope_id: getAvatarScopeId(avatar, characterId),
+                    scope_name: characterId,
+                    file_name: fileName,
+                    preview_message: String(chat?.preview || ''),
+                    last_mes: normalizeChatTimestamp(chat?.date),
+                    message_count: Number(chat?.message_count || 0),
+                    avatar,
+                };
+            }).filter(Boolean)
+            : [];
+
+        const groupEntries = Array.isArray(groupSummaries)
+            ? groupSummaries.map((chat) => {
+                const fileName = context.ensureJsonl(chat?.file_name || '');
+                const fileStem = context.stripJsonl(fileName);
+                const groupId = groupChatToGroup.get(fileStem);
+                const group = groupId ? groupById.get(groupId) : null;
+                if (!groupId || !group) {
+                    return null;
+                }
+
+                return {
+                    source_type: 'group',
+                    scope_id: groupId,
+                    scope_name: String(group?.name || groupId),
+                    file_name: fileName,
+                    preview_message: String(chat?.preview || ''),
+                    last_mes: normalizeChatTimestamp(chat?.date),
+                    message_count: Number(chat?.message_count || 0),
+                    avatar: String(group?.avatar_url || ''),
+                    group_id: groupId,
+                };
+            }).filter(Boolean)
+            : [];
+
+        const results = [...characterEntries, ...groupEntries]
+            .filter(Boolean)
+            .sort((a, b) => Number(b.last_mes || 0) - Number(a.last_mes || 0));
+
+        return jsonResponse(results);
     });
 
     router.post('/api/chats/recent', async ({ body }) => {

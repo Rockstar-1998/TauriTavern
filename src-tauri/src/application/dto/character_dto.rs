@@ -47,6 +47,7 @@ pub struct CreateCharacterDto {
     pub talkativeness: Option<f32>,
     pub fav: Option<bool>,
     pub alternate_greetings: Option<Vec<String>>,
+    pub world: Option<String>,
     pub system_prompt: Option<String>,
     pub post_history_instructions: Option<String>,
     pub extensions: Option<serde_json::Value>,
@@ -69,6 +70,7 @@ pub struct UpdateCharacterDto {
     pub talkativeness: Option<f32>,
     pub fav: Option<bool>,
     pub alternate_greetings: Option<Vec<String>>,
+    pub world: Option<String>,
     pub system_prompt: Option<String>,
     pub post_history_instructions: Option<String>,
     pub extensions: Option<serde_json::Value>,
@@ -216,6 +218,7 @@ impl From<CreateCharacterDto> for Character {
         character.data.character_version = character.character_version.clone();
         character.data.tags = character.tags.clone();
         character.data.alternate_greetings = dto.alternate_greetings.unwrap_or_default();
+        character.data.extensions.world = dto.world.unwrap_or_default();
         character.data.system_prompt = dto.system_prompt.unwrap_or_default();
         character.data.post_history_instructions =
             dto.post_history_instructions.unwrap_or_default();
